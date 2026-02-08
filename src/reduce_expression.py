@@ -206,6 +206,9 @@ class ReduceExpression:
 	#The following method test if minterms contain only one literal
 	def search_single_lit_mt(self, array_lit_mt):
 		single_lit_mt = False
+		if not array_lit_mt: # Check if the list is empty
+			return False # If empty, it cannot contain a single literal minterm
+
 		if not array_lit_mt[-1]:
 			del array_lit_mt[-1]		
 		if len(array_lit_mt) == 1:

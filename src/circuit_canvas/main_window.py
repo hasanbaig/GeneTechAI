@@ -195,6 +195,8 @@ class CircuitBuilder(QMainWindow):
         This evaluates the output of the circuit and converts it into boolean form.
         '''
         #Evaluate each part as each part has its own boolean expression
+        for part in self.circuit_builder.scene.parts:
+            part.evaluated = False
         [part.evaluate_output() for part in self.circuit_builder.scene.parts]
         #Evaluate the output of the output part
         output = self.circuit_builder.circuit_output.evaluate_output() if self.circuit_builder.circuit_output else ''
@@ -205,14 +207,14 @@ class CircuitBuilder(QMainWindow):
         output = output[1:-1] if output[0] == "(" and output[-1] == ")" else output
         # This creates the truth table
         table_val = ttg.Truths(['IPTG', 'aTc', 'Arabinose'], [output])
-        table = table_val.as_pandas()
+        table = table_val.as_pandas
         #Only select those rows which amount to True
         only_ones = table.loc[table.iloc[:, 3] == 1]
         sop = []
         #All the product terms
         for itr, row in only_ones.iterrows():
             #formatting the product term
-            string_ = "IPTG{0}.aTc{1}.Arabinose{2}".format("'"*row[0], "'"*row[1], "'"*row[2])
+            string_ = "IPTG{0}.aTc{1}.Arabinose{2}".format("'"*row['IPTG'], "'"*row['aTc'], "'"*row['Arabinose'])
             sop.append(string_)
         #Sum of all the products
         sop = "+".join(sop)
