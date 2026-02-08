@@ -315,7 +315,7 @@ class MyDraggableBox(QListWidget):
             mimeData.setData(mime_type, itemData)
             drag = QDrag(self)
             drag.setMimeData(mimeData)
-            drag.setHotSpot(QPoint(pixmap.width() / 2, pixmap.height() / 2))
+            drag.setHotSpot(QPoint(pixmap.width() // 2, pixmap.height() // 2))
             drag.setPixmap(pixmap)
             drag.exec_(Qt.MoveAction)
 
