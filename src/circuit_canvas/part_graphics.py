@@ -21,12 +21,12 @@ class GraphicsPart(QGraphicsItem):
         self.title_color = Qt.white
         self.title_font = QFont("Times",  11)
         '''
-        self.title_height = 10.0
+        self.title_height = 10
         #height and width of the circuit part that appears on screen
         self.width = 120
         #if its an input, the height must be less
         self.height = 80 if self.part_gate.is_gate else 40
-        self.edge_size = 4.0
+        self.edge_size = 4
 
         #pen to draw the outline; selected to denote a selected part on screen
         self.pen_default = QPen(QColor("#7F000000"))

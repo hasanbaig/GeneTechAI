@@ -18,8 +18,8 @@ class MyGraphicsEdge(QGraphicsPathItem):
         self._color_selected = QColor("#00ff00")
         self._pen = QPen(self._color)
         self._pen_selected = QPen(self._color_selected)
-        self._pen.setWidthF(2.0)
-        self._pen_selected.setWidthF(2.0)
+        self._pen.setWidthF(2)
+        self._pen_selected.setWidthF(2)
         self.setFlag(QGraphicsItem.ItemIsSelectable)
         self.setZValue(-1)
         self.posSource = [0, 0]

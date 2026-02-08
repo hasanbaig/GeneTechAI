@@ -1,10 +1,9 @@
-py4j
-SchemDraw
-pyqt5
+py4j==0.10.9.7
+SchemDraw<0.7
+truth-table-generator
+PyQt5==5.15.10
 matplotlib
 Pillow
 pandas
 dnaplotlib
 sbol2
-
-
