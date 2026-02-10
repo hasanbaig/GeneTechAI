@@ -56,7 +56,6 @@ class CircuitPart():
         '''
         This function evaluates the output of the gate or node
         '''
-        self.evaluated = False
         #Each circuit part is either a gate or a node
         #only evaluate if not previously evaluated
         if not self.evaluated:

@@ -183,6 +183,7 @@ class NotNorConverter:
 	
 	def process_and_term(self, current_min_terms):
 		array_literals_minterms = self.__nor_not_processor.extract_literals_min_terms([], current_min_terms)
+		interim_string = "" # Initialize interim_string
 		for i in range(len(array_literals_minterms)):
 			if "'" in array_literals_minterms[i]:
 				new_element = array_literals_minterms[i].replace("'", "")

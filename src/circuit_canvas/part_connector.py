@@ -58,8 +58,8 @@ class MyGraphicsConnector(QGraphicsItem):
         super().__init__(connector.part.grNode)
 
         # all of these can be changed
-        self.radius = 6.0
-        self.outline_width = 1.0
+        self.radius = 6
+        self.outline_width = 1
         self._color_background = QColor("#4C000000")
         self._color_outline = QColor("#FF000000")
         self._pen = QPen(self._color_outline)
