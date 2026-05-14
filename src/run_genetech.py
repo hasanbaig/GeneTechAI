@@ -5,6 +5,13 @@ import os
 import sys
 import numpy as np
 
+if getattr(sys, "frozen", False):
+    RESOURCE_DIR = os.path.join(os.path.dirname(os.path.dirname(sys.executable)), "Resources")
+else:
+    RESOURCE_DIR = os.path.dirname(__file__)
+
+os.chdir(RESOURCE_DIR)
+
 # Add numpy compatibility fixes
 if not hasattr(np, 'Inf'):
     np.Inf = np.inf
@@ -16,7 +23,7 @@ if not hasattr(np, 'PINF'):
     np.PINF = np.inf
 
 # Add current directory to path
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, RESOURCE_DIR)
 
 # Now import and run GeneTech
 from Genetech import MainPage

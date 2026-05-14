@@ -2,10 +2,13 @@ from sbol2 import *
 #
 import sbol2
 print(sbol2.__version__)
-import glob, os
+import glob, os, sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parents[1] / "Resources"
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 USER_FILES_DIR = BASE_DIR / "user_files"
 DATA_FILE = BASE_DIR / "Data.txt"
 CIRCUITS_FILE = BASE_DIR / "circuits.txt"

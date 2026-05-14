@@ -1,0 +1,15 @@
+PyQt5==5.15.11
+numpy
+pandas
+matplotlib
+Pillow
+python-dotenv
+requests
+groq
+sbol2
+sbol3
+SchemDraw==0.6.0
+dnaplotlib
+py4j
+truth-table-generator
+pyinstaller

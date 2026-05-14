@@ -1,6 +1,7 @@
 import itertools
 import os
 import re
+import sys
 import tempfile
 from pathlib import Path
 
@@ -11,7 +12,10 @@ os.environ.setdefault("XDG_CACHE_HOME", tempfile.mkdtemp(prefix="xdg-cache-"))
 from flask import Flask, render_template, request, send_from_directory
 
 
-BASE_DIR = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys.executable).resolve().parents[1] / "Resources"
+else:
+    BASE_DIR = Path(__file__).resolve().parent
 CIRCUITS_FILE = BASE_DIR / "circuits.txt"
 USER_FILES_DIR = BASE_DIR / "user_files"
 app = Flask(__name__)
