@@ -1,5 +1,6 @@
 from min_terms_processor import MinTermsProcessor
 import re
+from functions import CIRCUITS_FILE, GATESLIB1_FILE
 
 class TechMapper:
 	sequence_gates_list =  []
@@ -13,14 +14,24 @@ class TechMapper:
 	circuit_count = 1
 
 	def __init__(self, inp_expression):
-		self.file = open("circuits.txt", "w")
+		self.file = open(CIRCUITS_FILE, "w")
 		self.tech_map_process = MinTermsProcessor(None, 0, None)
 		self.inp_expression_braces = self.tech_map_process.replace_braces_tags(inp_expression)
+		self.sequence_gates_list = []
+		self.sequence_all_gates_list = []
+		self.interim_nor_gates_list_exp = []
+		self.size_list_inv = 0
+		self.size_list_outer_input = 0
+		self.size_list_left_input = 0
+		self.size_list_right_input = 0
+		self.size_list_inv_and_gates = 0
+		self.circuit_count = 1
 		self.external_inverters_list = []
 		self.internal_inverters_list = []
 		self.external_nor_gates_list = []
 		self.semi_external_nor_gates_list = []
 		self.internal_nor_gates_list = []
+		self._seen_circuit_signatures = set()
 		#print("Minterms: "+ self.tech_map_process.countMinTermsInExpression(inp_expression_braces))
 
 	'''
@@ -29,7 +40,7 @@ class TechMapper:
 	 *
 	'''
 	def read_gates_lib(self):
-		gates_lib_file = open("GatesLib1.txt", "r")
+		gates_lib_file = open(GATESLIB1_FILE, "r")
 		self.file_content = ''.join([i for i in gates_lib_file.read().splitlines()])
 		return self.file_content
 
@@ -77,6 +88,11 @@ class TechMapper:
 
 	def generate_tree_expression(self):
 		input_expression = self.inp_expression_braces
+		restored_expression = self.tech_map_process.replace_tags_braces(input_expression)
+		if self.generate_simple_expression(restored_expression):
+			return
+		if self.generate_dual_nor_expression(restored_expression):
+			return
 		interim_expression = input_expression
 		SOP = "SOP1"
 		EOP = "EOP1"
@@ -88,6 +104,172 @@ class TechMapper:
 			SOP = "SOP1"
 			EOP = "EOP1"
 			interim_expression = input_expression[input_expression.index(EOP)+len(EOP) :]
+
+	def split_top_level_plus(self, expression):
+		depth = 0
+		parts = []
+		start = 0
+		for idx, char in enumerate(expression):
+			if char == "(":
+				depth += 1
+			elif char == ")":
+				depth -= 1
+			elif char == "+" and depth == 0:
+				parts.append(expression[start:idx])
+				start = idx + 1
+		parts.append(expression[start:])
+		return [part.strip() for part in parts if part.strip()]
+
+	def extract_dual_nor_terms(self, expression):
+		parts = self.split_top_level_plus(expression)
+		if len(parts) != 2:
+			return None
+
+		extracted_terms = []
+		for part in parts:
+			if not (part.startswith("(") and part.endswith(")'")):
+				return None
+			inner = part[1:-2]
+			if "(" in inner or ")" in inner:
+				return None
+			min_terms = [term.strip() for term in inner.split("+") if term.strip()]
+			if len(min_terms) != 2:
+				return None
+			extracted_terms.append(min_terms)
+		return extracted_terms
+
+	def format_branch_gate(self, gate):
+		if len(gate) == 3:
+			if gate[0] in ["PTac", "PTet", "PBad"]:
+				protein = gate[2].replace("P", "", 1)
+				return gate[0] + "-> " + gate[1] + "-> (" + protein + ")", gate[2]
+			if "'" in gate[0]:
+				protein = gate[2].replace("P", "", 1)
+				return gate[1] + "-> (" + protein + ")", gate[2]
+		elif len(gate) == 2:
+			protein = gate[1].replace("P", "", 1)
+			return gate[0] + "-> (" + protein + ")", gate[1]
+		return "", ""
+
+	def generate_dual_nor_expression(self, input_expression):
+		dual_terms = self.extract_dual_nor_terms(input_expression)
+		if not dual_terms:
+			return False
+
+		left_candidates = self.gate_assignment(dual_terms[0])
+		right_candidates = self.gate_assignment(dual_terms[1])
+		generated = False
+
+		for main_gate in left_candidates:
+			for side_gate in right_candidates:
+				generated = self.build_dual_nor_circuits(main_gate, side_gate) or generated
+				generated = self.build_dual_nor_circuits(side_gate, main_gate) or generated
+
+		return generated
+
+	def build_dual_nor_circuits(self, main_gate, side_gate):
+		generated = False
+		main_output = main_gate[2]
+		side_output = side_gate[2]
+		if main_output == side_output:
+			return False
+
+		for nor_gate in self.internal_nor_gates_list:
+			if main_output not in nor_gate[:2] or side_output not in nor_gate[:2]:
+				continue
+
+			side_input = nor_gate[1] if nor_gate[0] == main_output else nor_gate[0]
+			for inverter_gate in self.internal_inverters_list:
+				if nor_gate[2] != inverter_gate[0]:
+					continue
+
+				main_branch, _ = self.format_branch_gate(main_gate)
+				side_branch, side_branch_output = self.format_branch_gate(side_gate)
+				if not main_branch or not side_branch:
+					continue
+
+				nor_protein = nor_gate[2].replace("P", "", 1)
+				inverter_protein = inverter_gate[1].replace("P", "", 1)
+				main_line = (
+					main_branch
+					+ " ----|"
+					+ main_output
+					+ "-> "
+					+ side_input
+					+ "-> ("
+					+ nor_protein
+					+ ") ----|"
+					+ nor_gate[2]
+					+ "-> ("
+					+ inverter_protein
+					+ ") ----|"
+					+ inverter_gate[1]
+					+ "-> (YFP)"
+				)
+
+				side_line = self.align_branch_line(main_line, side_branch, side_branch_output)
+				self.write_manual_circuit(main_line, side_line)
+				generated = True
+
+		return generated
+
+	def align_branch_line(self, main_line, side_branch, target_promoter):
+		if target_promoter not in main_line:
+			return side_branch + "--^"
+		target_idx = main_line.index(target_promoter)
+		dash_count = max(2, target_idx - len(side_branch))
+		return side_branch + ("-" * dash_count) + "--^"
+
+	def write_manual_circuit(self, diagram, diagram2=""):
+		bad_solution = self.filter_bad_solutions(diagram, diagram2, "")
+		signature = "\n".join(part for part in [diagram, diagram2] if part)
+		if signature in self._seen_circuit_signatures:
+			bad_solution = True
+
+		if bad_solution:
+			return
+
+		self._seen_circuit_signatures.add(signature)
+		print("\n************************************** Genetic Circuit "+ str(self.circuit_count) +" **************************************")
+		print("\n" + diagram)
+		self.file.write("******************* Genetic Circuit "+ str(self.circuit_count) +" *****************\n")
+		self.file.write("\n" + diagram)
+		if diagram2:
+			print(" 2 ", diagram2)
+			self.file.write("\n" + diagram2)
+		self.file.write("\n\n")
+		print("\n***********************************************************************************************")
+		self.circuit_count += 1
+
+	def generate_simple_expression(self, input_expression):
+		min_term = input_expression.strip()
+		if not min_term:
+			return True
+		if "SOP" in min_term or "EOP" in min_term or "+" in min_term:
+			return False
+		if min_term.startswith("(") and min_term.endswith(")'") and len(min_term) == 4:
+			min_term = min_term[1] + "'"
+		elif min_term.startswith("(") and min_term.endswith(")") and len(min_term) == 3:
+			min_term = min_term[1]
+
+		if "'" not in min_term:
+			promoter_map = {"a": "PTac", "b": "PTet", "c": "PBad"}
+			if min_term not in promoter_map:
+				return False
+			diagram = promoter_map[min_term] + "-> (YFP)"
+			self.file.write("******************* Genetic Circuit "+ str(self.circuit_count) +" *****************\n")
+			self.file.write("\n" + diagram + "\n\n")
+			self.circuit_count += 1
+			return True
+
+		gate_list = self.go_to_list(min_term)
+		for gate in gate_list:
+			promoter = gate[1]
+			output_promoter = gate[2]
+			protein = output_promoter.replace("P", "", 1)
+			diagram = promoter + "-> (" + protein + ") ----|" + output_promoter + "-> (YFP)"
+			self.check_circuit_diagram(1, diagram, "", ["null", "null", "null"])
+		return True
 
 	def extract_nested_SOP_elements(self, interim_expression, SOP, EOP):
 		interim_array = []
@@ -295,7 +477,12 @@ class TechMapper:
 
 		bad_solution = self.filter_bad_solutions (diagram, diagram2, diagram3)
 
+		signature = "\n".join(part for part in [diagram, diagram2, diagram3] if part)
+		if signature in self._seen_circuit_signatures:
+			bad_solution = True
+
 		if not bad_solution:
+			self._seen_circuit_signatures.add(signature)
 			print("\n************************************** Genetic Circuit "+ str(self.circuit_count) +" **************************************")
 			print("\n" + diagram)
 			self.file.write("******************* Genetic Circuit "+ str(self.circuit_count) +" *****************\n")
@@ -343,14 +530,7 @@ class TechMapper:
 		elif prot_diag3 in prot_main_diag:
 			bad_solution = True
 		else:
-			for i in range(prot_main_diag_size):
-				for j in range(1, prot_diag_sub_size):
-					bad_solution = prot_main_diag[i] == prot_main_diag[i+j]
-					if bad_solution:
-						break
-					elif j == prot_diag_sub_size - 1:
-						prot_diag_sub_size = prot_diag_sub_size - 1
-						bad_solution = False
+			bad_solution = len(prot_main_diag) != len(set(prot_main_diag))
 		return bad_solution
 
 
@@ -483,6 +663,11 @@ class TechMapper:
 
 
 	def gate_assignment(self, min_terms):
+		if not min_terms:
+			return []
+		if len(min_terms) == 1:
+			return self.go_to_list(min_terms[0])
+
 		interim_min_term_array = ["",""]
 		min_term_l = min_terms[0]
 		min_term_r = min_terms[1]
@@ -528,18 +713,13 @@ class TechMapper:
 					left_t = rx_list_l[left_term][2]
 					right_t = rx_list_r[right_term][2]
 					if left_t != right_t:
-						#searchNorGates:
-						for search_idx in range(len(interim_list)):
-							gate_input1 = interim_list[search_idx][0]
-							gate_input2 = interim_list[search_idx][1]
+						for gate in list(interim_list):
+							gate_input1 = gate[0]
+							gate_input2 = gate[1]
 							if ((left_t == gate_input1 or left_t == gate_input2)
 								and (right_t == gate_input1 or right_t == gate_input2)):
-								try:
-									list_nor_gates.append(interim_list[search_idx])
-									interim_list.remove(search_idx)
-								except:
-									print("BROKEN")
-									#break searchNorGates
+								if gate not in list_nor_gates:
+									list_nor_gates.append(gate)
 
 		elif nor_gate_type[0] == "Ext" and nor_gate_type[1] == "Ext":
 			# call external nor gates list
@@ -566,13 +746,15 @@ class TechMapper:
 				elif min_term_r == "b":
 					interim_list.extend(self.external_nor_gates_list[5: 8])
 
-			if "null" in interim_list:
+			if interim_list:
 				list_nor_gates.extend(interim_list)
 
 		else:
 			# call semi external nor gates list
 			#(Ptac)
 			if "'" in min_term_l:
+				if not rx_list_r:
+					return list_nor_gates
 
 				if "PTac" in rx_list_r[0][2]:
 					interim_list.extend(self.semi_external_nor_gates_list[0:5])
@@ -591,6 +773,8 @@ class TechMapper:
 							list_nor_gates.append(interim_list[gates])
 
 			elif  "'" in min_term_r:
+				if not rx_list_l:
+					return list_nor_gates
 
 				if "PTac" in rx_list_l[0][2]:
 					interim_list.extend(self.semi_external_nor_gates_list[0:5])
@@ -614,7 +798,7 @@ class TechMapper:
 		count = 1
 		#Count number of SOP1 terms
 		array = input_expression.split("+", 1)
-		while searchSOP in array[1]:
+		while len(array) > 1 and searchSOP in array[1]:
 			input_expression = array[1][array[1].index(searchSOP)+4:]
 			array = input_expression.split("+", 1)
 			count += 1

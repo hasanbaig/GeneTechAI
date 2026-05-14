@@ -2,14 +2,14 @@ import math
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from circuit_parts import CircuitPart
-from window_graphics_scene import MyGraphicsScene
-from circuit_scene import CircuitScene
-from part_widget import PartWidget
-from part_graphics import GraphicsPart
-from part_connector import *
-from edges import *
-from configuration import *
+from .circuit_parts import CircuitPart
+from .window_graphics_scene import MyGraphicsScene
+from .circuit_scene import CircuitScene
+from .part_widget import PartWidget
+from .part_graphics import GraphicsPart
+from .part_connector import *
+from .edges import *
+from .configuration import *
 
 mime_type = "application/x-item"
 

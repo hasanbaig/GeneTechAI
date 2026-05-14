@@ -6,6 +6,7 @@ from reduce_expression import ReduceExpression
 from tech_mapping import TechMapper
 from simulated_annealing import SimulatedAnnealing
 from min_terms_processor import MinTermsProcessor
+from functions import DATA_FILE
 
 def process(inputBoolExp = None):
 	inputInterface = LVInterface()
@@ -32,7 +33,7 @@ def process(inputBoolExp = None):
 	initTemp = inputInterface.initial_temp 		#10.0
 	tempCoeff = inputInterface.temp_coeff 	#0.90
 	timeToRun = inputInterface.time_to_run	#0.030	#0.5
-	writeFile = open("Data.txt", "w")
+	writeFile = open(DATA_FILE, "w")
 	SimAnneal = SimulatedAnnealing(tempCoeff, initTemp, timeToRun, newInputEq)
 	SimAnneal.minimise_expression()
 	bestSolution = SimAnneal.best_solution()
@@ -68,7 +69,10 @@ def process(inputBoolExp = None):
 	mapGatesOnExpression.generate_tree_expression()
 	mapGatesOnExpression.finalize()
 
-def output_checker(fname1 = "circuits.txt", fname2 = None):
+def output_checker(fname1 = None, fname2 = None):
+	if fname1 is None:
+		from functions import CIRCUITS_FILE
+		fname1 = CIRCUITS_FILE
 	f1 = open(fname1, "r")
 	f2 = open(fname2, "r")
 	lines1 = f1.readlines()
@@ -80,5 +84,6 @@ def output_checker(fname1 = "circuits.txt", fname2 = None):
 	assert lines1 == lines2
 	print("passed")
 
-input = "IPTG'.aTc'.Arabinose'+IPTG.aTc'.Arabinose'+IPTG.aTc'.Arabinose+IPTG.aTc.Arabinose'"
-process(input)
+if __name__ == "__main__":
+	input = "IPTG'.aTc'.Arabinose'+IPTG.aTc'.Arabinose'+IPTG.aTc'.Arabinose+IPTG.aTc.Arabinose'"
+	process(input)

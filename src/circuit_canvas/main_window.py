@@ -3,8 +3,8 @@ import ttg
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from main_widget import MainScreenWidget
-from configuration import *
+from .main_widget import MainScreenWidget
+from .configuration import *
 
 mime_type = "application/x-item"
 

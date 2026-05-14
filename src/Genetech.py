@@ -1,13 +1,15 @@
 import os
+import re
 import sys
 import time
+import traceback
 from PIL import Image
 import SBOL_File as sbol
 import Logical_Representation as logic
 import SBOL_visual as visual
 from PyQt5 import QtCore, QtGui, uic, QtWidgets
 from PyQt5.QtCore import pyqtSlot, QCoreApplication, QBasicTimer, QThread, pyqtSignal
-from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QLabel, QLineEdit, QMessageBox, QFileDialog, QTabWidget, QWidget, QListWidget, QProgressBar
+from PyQt5.QtWidgets import QApplication, QDialog, QPushButton, QLabel, QLineEdit, QMessageBox, QFileDialog, QTabWidget, QWidget, QListWidget, QProgressBar, QInputDialog
 from PyQt5.uic import loadUi
 from PyQt5.QtGui import QIcon, QFont, QPixmap
 from itertools import product
@@ -16,15 +18,32 @@ from time import sleep
 import random
 from main import process
 import sys
+
+try:
+    from nlp_groq import GroqNLParser
+except Exception:
+    GroqNLParser = None
+
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 sys.path.append("circuit_canvas/")
-from main_window import CircuitBuilder
+#from main_window import CircuitBuilder
+try:
+    from circuit_canvas.main_window import CircuitBuilder
+except Exception:
+    CircuitBuilder = None
+from nlp_local import LocalNLParser
+from gentech_database import GeneTechDatabase
+
 font = QFont("Times", 11)
 
-# The main class which operates the entire widnow
+# The main class which operates the entire window
 class MainPage(QtWidgets.QMainWindow):
     def __init__(self):
-        if not os.path.exists(os.getcwd()+'/user_files'):
-            os.makedirs(os.getcwd()+'/user_files')
+        USER_FILES_DIR.mkdir(exist_ok=True)
 
         # Lists which are being used in the code later
         self.result=[]
@@ -34,12 +53,12 @@ class MainPage(QtWidgets.QMainWindow):
         super(MainPage, self).__init__()
 
         #Loading the UI file which have been created for the main window
-        loadUi('Genetech.ui', self)
+        loadUi(str(BASE_DIR / 'Genetech.ui'), self)
 
         #Setting the logos for the window
-        self.setWindowIcon(QtGui.QIcon(os.getcwd()+'/icons/SmallLogo.png'))
+        self.setWindowIcon(QtGui.QIcon(str(BASE_DIR / 'icons' / 'SmallLogo.png')))
         self.setWindowTitle("GeneTech - v2.0")
-        pixmap = QPixmap(os.getcwd()+'/icons/BigLogo.png')
+        pixmap = QPixmap(str(BASE_DIR / 'icons' / 'BigLogo.png'))
         self.MainLogo.setPixmap(pixmap)
 
         #Initial Label in the status bar
@@ -48,12 +67,12 @@ class MainPage(QtWidgets.QMainWindow):
         # Button Entries which have been coded and these are called when button are clicked
         self.SaveButton.clicked.connect(self.SaveLabel)
         self.DrawButton.clicked.connect(self.DrawWindow)
-
         self.ViewButton.clicked.connect(self.viewCircuit)
         self.ImportNotesButton.clicked.connect(self.FileOpenDialog)
         self.SaveNotesButton.clicked.connect(self.SaveNotes)
         self.EnterButton.clicked.connect(self.EnterExp)
         self.ExitButton.clicked.connect(self.ResetAll)
+        self.DatabaseButton.clicked.connect(self.checkDatabase)
 
         self.CircuitList.doubleClicked.connect(self.saveImageDialog)
         self.xmlList.clicked.connect(self.ReadXMLFile)
@@ -63,9 +82,43 @@ class MainPage(QtWidgets.QMainWindow):
         self.actionExit.triggered.connect(self.CloseApp)
         self.actionAbout.triggered.connect(self.About)
 
+        # Keep the action buttons together so the extra NLP action does not widen the grid.
+        self.gridLayout.removeWidget(self.ExitButton)
+        self.gridLayout.removeWidget(self.EnterButton)
+        self.buttonRowWidget = QWidget(self.widget)
+        self.buttonRowLayout = QtWidgets.QHBoxLayout(self.buttonRowWidget)
+        self.buttonRowLayout.setContentsMargins(0, 0, 0, 0)
+        self.buttonRowLayout.setSpacing(8)
+
+        self.NLPButton = QPushButton("Natural Language", self.buttonRowWidget)
+        self.NLPButton.setFont(self.EnterButton.font())
+        self.NLPButton.clicked.connect(self.natural_language_input)
+        self.NLPButton.setStatusTip("Describe your circuit in plain English")
+
+        for button, width in (
+            (self.ExitButton, 100),
+            (self.NLPButton, 150),
+            (self.EnterButton, 100),
+        ):
+            button.setParent(self.buttonRowWidget)
+            button.setMinimumWidth(width)
+            button.setMaximumWidth(width)
+            button.setMinimumHeight(self.EnterButton.sizeHint().height())
+            button.setMaximumHeight(self.EnterButton.sizeHint().height())
+            button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+            self.buttonRowLayout.addWidget(button)
+
+        self.gridLayout.addWidget(
+            self.buttonRowWidget,
+            4,
+            5,
+            1,
+            2,
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter,
+        )
+
         #Keyboard Shortcuts for some funtionalities
         self.EnterButton.setShortcut("Return")
-        #self.actionSave.setShortcut("Ctrl+S")
         self.actionExit.setShortcut("Ctrl+Q")
         self.actionAbout.setShortcut("Ctrl+O")
         self.ExitButton.setShortcut("Ctrl+R")
@@ -77,8 +130,480 @@ class MainPage(QtWidgets.QMainWindow):
         self.ExitButton.setStatusTip("Exit the window")
         self.InsertExpressionEdit.setStatusTip("Insert a Boolean expression here")
 
+    def _handle_expression_error(self, stage, error):
+        tb = traceback.format_exc()
+        self.statusBar().showMessage(f'Expression processing failed during {stage}')
+        print(tb)
+        QMessageBox.critical(
+            self,
+            "Expression Error",
+            f"The inserted expression could not be processed during {stage}.\n\n{error}\n\n{tb}"
+        )
+
+    def _normalize_expression_variables(self, bexp):
+        variable_map = {
+            "a": "IPTG",
+            "b": "aTc",
+            "c": "Arabinose",
+        }
+
+        def replace_token(match):
+            token = match.group(0)
+            return variable_map.get(token, token)
+
+        normalized = re.sub(r"(?<![A-Za-z])(a|b|c)(?![A-Za-z])", replace_token, bexp)
+        simplified_terms = []
+
+        for raw_term in normalized.split("+"):
+            if not raw_term:
+                continue
+
+            seen_literals = {}
+            ordered_literals = []
+            contradictory_term = False
+
+            for literal in raw_term.split("."):
+                literal = literal.strip()
+                if not literal:
+                    continue
+
+                base_literal = literal[:-1] if literal.endswith("'") else literal
+                polarity = literal.endswith("'")
+
+                if base_literal in seen_literals:
+                    if seen_literals[base_literal] != polarity:
+                        contradictory_term = True
+                        break
+                    continue
+
+                seen_literals[base_literal] = polarity
+                ordered_literals.append(literal)
+
+            if not contradictory_term and ordered_literals:
+                simplified_terms.append(".".join(ordered_literals))
+
+        return "+".join(simplified_terms)
+
+    def _canonicalize_expression(self, bexp):
+        if not bexp:
+            return ""
+
+        expr = bexp
+        replacements = {
+            '’': "'",
+            '‘': "'",
+            '”': '"',
+            '“': '"',
+            '`': "'",
+            '′': "'",
+            '‛': "'",
+        }
+        for old, new in replacements.items():
+            expr = expr.replace(old, new)
+
+        expr = re.sub(r'(?i)\biptg\b', 'IPTG', expr)
+        expr = re.sub(r'(?i)\batc\b', 'aTc', expr)
+        expr = re.sub(r'(?i)\barabinose\b', 'Arabinose', expr)
+
+        expr = re.sub(r'(?i)\bnot\b', '!', expr)
+        expr = re.sub(r'(?i)\band\b', '.', expr)
+        expr = re.sub(r'(?i)\bor\b', '+', expr)
+        expr = expr.replace('&', '.').replace('*', '.')
+        expr = expr.replace('|', '+')
+
+        # Convert prefix negation on literals into the postfix prime notation used by the mapper.
+        expr = re.sub(r'([!~])\s*(IPTG|aTc|Arabinose|a|b|c)\b', r"\2'", expr)
+
+        expr = re.sub(r'\s+', '', expr)
+        expr = expr.replace('"', '')
+
+        # Users often wrap each product term in parentheses; the backend only wants raw SOP products.
+        previous = None
+        while previous != expr:
+            previous = expr
+            expr = re.sub(r'\(([^()+]+)\)', r'\1', expr)
+
+        expr = expr.replace('..', '.')
+        expr = expr.replace('++', '+')
+        expr = expr.strip('.+')
+        return expr
+
+    def _expression_candidates(self, bexp):
+        candidates = []
+        for candidate in [
+            bexp,
+            self._canonicalize_expression(bexp),
+        ]:
+            if not candidate:
+                continue
+            if candidate not in candidates:
+                candidates.append(candidate)
+
+        normalized_candidates = []
+        for candidate in candidates:
+            normalized = self._normalize_expression_variables(candidate)
+            if normalized and normalized not in candidates and normalized not in normalized_candidates:
+                normalized_candidates.append(normalized)
+
+        candidates.extend(normalized_candidates)
+        return candidates
+
+    def _run_expression_pipeline(self, bexp, option, include_sbol=False, update_progress=False):
+        try:
+            attempted_expressions = []
+            circuits = []
+            synthesis_attempts = []
+            max_attempts_per_candidate = 5
+
+            for candidate in self._expression_candidates(bexp):
+                if not candidate or candidate in attempted_expressions:
+                    continue
+                attempted_expressions.append(candidate)
+                for attempt in range(1, max_attempts_per_candidate + 1):
+                    synthesis_attempts.append(f"{candidate} [attempt {attempt}]")
+                    process(candidate)
+                    circuits = self.ReadCircuitsFile()
+                    if circuits:
+                        bexp = candidate
+                        break
+                if circuits:
+                    break
+
+            if not circuits:
+                raise ValueError(
+                    "No valid circuits could be generated from that expression. "
+                    "Tried: " + ", ".join(synthesis_attempts) + ". "
+                    "This usually means the current gate library cannot map that Boolean function into available circuits. "
+                    "Try using IPTG, aTc, and Arabinose notation, or simple a/b/c shorthand."
+                )
+            DisplayData()
+            DisplayCircuits()
+
+            if update_progress:
+                self.ProgressBar.setValue(25)
+                sleep(1)
+                self.ProgressBar.setValue(random.randint(30, 70))
+
+            if include_sbol:
+                sbol.SBOL_File(
+                    self.spinBox.value(),
+                    self.doubleSpinBox.value(),
+                    option,
+                    self.CircuitSpinBox.value()
+                )
+
+            if update_progress:
+                self.ProgressBar.setValue(random.randint(75, 90))
+                sleep(0.1)
+
+            logic.Logical_Representation(
+                self.spinBox.value(),
+                self.doubleSpinBox.value(),
+                option,
+                self.CircuitSpinBox.value()
+            )
+            visual.SBOLv(
+                self.spinBox.value(),
+                self.doubleSpinBox.value(),
+                option,
+                self.CircuitSpinBox.value()
+            )
+
+            if update_progress:
+                self.ProgressBar.setValue(100)
+            return True
+        except Exception as e:
+            self._handle_expression_error("circuit generation", e)
+            return False
+
+    def _resolve_sbol_file_path(self, item_text):
+        candidates = [
+            USER_FILES_DIR / f"{item_text}.xml",
+            BASE_DIR / f"{item_text}.xml",
+        ]
+        for path in candidates:
+            if os.path.exists(path):
+                return str(path)
+        return str(candidates[0])
+
+    def _show_sbol_empty_state(self, message):
+        self.xmlList.clear()
+        self.Notes.setText(message)
+        self.statusBar().showMessage(message)
+
+    def _load_first_sbol_file(self):
+        if self.xmlList.count() == 0:
+            return
+        self.xmlList.setCurrentRow(0)
+        self.ReadXMLFile()
+
+    def _populate_truth_table(self, bexp):
+        a = 0
+        try:
+            bexp = Convert(bexp)
+            bexp = "".join(bexp.split())
+            finalexp = []
+            exp = bexp.split("+")
+            for i in range(len(exp)):
+                term = exp[i].split(".")
+                finalterm = []
+                for j in range(len(term)):
+                    if term[j][-1] == "'":
+                        finalterm.append("not(" + term[j][:-1] + ")")
+                    else:
+                        finalterm.append(term[j])
+                finalexp.append("(" + " and ".join(finalterm) + ")")
+            bexp = " or ".join(finalexp)
+            code = compile(bexp, '', 'eval')
+            TruthTable_Input = code.co_names
+            for values1 in product(range(2), repeat=len(TruthTable_Input)):
+                header_count = 2 ** (len(values1))
+                List_TruthTable_Input = [[] for i in range(1, header_count + 1)]
+            self.TruthList.clear()
+            for BexpIndex in range(len(TruthTable_Input)):
+                self.ttList.append(TruthTable_Input[BexpIndex])
+                self.ttList.append("   ")
+            self.ttList.append(":   ")
+            self.ttList.append(bexp)
+            s = [str(i) for i in self.ttList]
+            res = " ".join(s)
+            self.TruthList.addItem(res)
+            self.ttList.clear()
+            for values in product(range(2), repeat=len(TruthTable_Input)):
+                for w in range(len(values)):
+                    List_TruthTable_Input[a].append(str(values[w]))
+                a += 1
+                env = dict(zip(TruthTable_Input, values))
+                pk = int(eval(code, env))
+
+                for v in values:
+                    self.ttList.append(v)
+                    self.ttList.append("     ")
+                self.ttList.append(":       ")
+                self.ttList.append(pk)
+                s = [str(i) for i in self.ttList]
+                res = " ".join(s)
+                self.TruthList.addItem(res)
+                self.ttList.clear()
+            return True
+        except Exception as e:
+            self.TruthList.clear()
+            self.ttList.clear()
+            self._handle_expression_error("truth table generation", e)
+            return False
+
+    def natural_language_input(self):
+        """Convert natural language to Boolean expression using local parsing or Groq"""
+        text, ok = QInputDialog.getMultiLineText(
+            self,
+            "Natural Language Input",
+            "Describe your circuit in plain English:\n\n"
+        )
+        
+        if ok and text:
+            self.statusBar().showMessage('🤖 Processing input...')
+            QApplication.processEvents()
+            
+            try:
+                expression = None
+                parser_name = "Local Parser"
+
+                # Try local parser first for simple shorthand inputs.
+                try:
+                    local_result = LocalNLParser().parse(text)
+                    if local_result and local_result.get('expression'):
+                        expression = local_result['expression']
+                except Exception:
+                    expression = None
+
+                # Fall back to Groq if local parsing did not produce an expression.
+                if not expression:
+                    parser_name = "Groq"
+                    if GroqNLParser is None:
+                        raise RuntimeError("Groq support is not installed in this environment.")
+                    import os
+                    api_key = os.getenv("GROQ_API_KEY")
+                    if not api_key:
+                        api_key, ok = QInputDialog.getText(
+                            self, "Groq API Key", 
+                            "Enter your free Groq API key:\n"
+                            "Get it at: console.groq.com/keys\n\n"
+                            "It's completely FREE and takes 30 seconds!"
+                        )
+                        if not ok or not api_key:
+                            return
+                        os.environ["GROQ_API_KEY"] = api_key
+                    
+                    parser = GroqNLParser(api_key)
+                    expression = parser.parse(text)
+
+                # Clean up smart quotes and spaces
+                if expression:
+                    # clean up smart quotes and special characters
+                    expression = expression.replace('’', "'")  # fancy right quote
+                    expression = expression.replace('‘', "'")  # fancy left quote
+                    expression = expression.replace('”', '"')  # fancy double quote
+                    expression = expression.replace('“', '"')  # fancy double quote
+                    expression = expression.replace('"', '')   # remove any double quotes
+                    expression = expression.replace('`', "'")  # backticks
+                    expression = expression.replace('′', "'")  # prime symbol
+                    expression = expression.replace('‛', "'")  # fancy quote
+                    expression = expression.replace(' ', '')   # remove all spaces
+                    
+                    # Also fix any other potential issues
+                    expression = expression.replace('&', '.')  # & to .
+                    expression = expression.replace('|', '+')  # | to +
+                    
+                    print(f"Cleaned expression: {expression}")  # Debug print
+                    
+                    # Now set it
+                    self.InsertExpressionEdit.setText(expression)
+                
+                if expression:
+                    msg = f"{parser_name} converted your description:\n\n"
+                    msg += f"'{text}'\n\n"
+                    msg += f"→ {expression}\n\n"
+                    msg += "Insert into expression field?"
+                    
+                    reply = QMessageBox.question(
+                        self, f"{parser_name} Result", msg,
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    
+                    if reply == QMessageBox.Yes:
+                        self.InsertExpressionEdit.setText(expression)
+                        self.statusBar().showMessage('Expression ready - click Enter')
+                    else:
+                        self.statusBar().showMessage('Cancelled')
+                else:
+                    QMessageBox.critical(self, "Error", "Could not parse your request.")
+                    
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error:\n{str(e)}")
+
+            def _local_natural_language_fallback(self, text):
+                """Fallback to local NLP parser"""
+                try:
+                    from nlp_local import LocalNLParser
+                    parser = LocalNLParser()
+                    result = parser.parse(text)
+                    
+                    msg = f"Parsed with local parser!\n\n"
+                    msg += f"Expression: {result['expression']}\n"
+                    msg += f"Variables: {', '.join(result['variables'])}\n\n"
+                    msg += "Insert into expression field?"
+                    
+                    reply = QMessageBox.question(
+                        self, "Local Parser Result", msg,
+                        QMessageBox.Yes | QMessageBox.No
+                    )
+                    
+                    if reply == QMessageBox.Yes:
+                        self.InsertExpressionEdit.setText(result['expression'])
+                        self.statusBar().showMessage('Expression ready - click Enter')
+                        
+                except Exception as e:
+                    QMessageBox.critical(self, "Error", f"Local parser also failed:\n{str(e)}")
+
+    # Database Check
+    def checkDatabase(self):
+        """
+        Run the database/registry check from the GUI.
+
+        This method is the bridge between the button the user clicks and the
+        database integration code in gentech_database.py. It does not do the
+        actual part lookup itself. Instead, it checks that circuits exist,
+        calls GeneTechDatabase to analyze them, then formats the returned report
+        into a message box for the user.
+        """
+        # The database check only makes sense after circuits have been generated,
+        # because circuits.txt is the input file that contains the part names.
+        if not CIRCUITS_FILE.exists():
+            QMessageBox.warning(self, "Warning", "Generate circuits first")
+            return
+        
+        # Show immediate feedback in the status bar while the lookup is running.
+        self.statusBar().showMessage('Checking iGEM database...')
+        
+        try:
+            # Create the database integration object. This sets up the part mapper
+            # and the default registry providers: iGEM Registry and BioPartsDB.
+            db = GeneTechDatabase()
+
+            # Hand circuits.txt to the database layer. The returned report is a
+            # complete dictionary with summary counts, part details, circuit
+            # details, and the path to the saved JSON report.
+            report = db.analyze_circuits_file(CIRCUITS_FILE)
+
+            # Pull out just the final availability decision for each unique part.
+            results = [entry["availability"] for entry in report["parts"]]
+
+            # If no parts were extracted from the circuit file, there is nothing
+            # meaningful to display.
+            if not results:
+                QMessageBox.information(self, "No Parts", "No parts found")
+                return
+
+            # The summary contains the headline numbers shown to the user.
+            summary = report["summary"]
+
+            # Convert the boolean all_circuits_buildable value into friendly text.
+            buildable_text = "Yes" if summary["all_circuits_buildable"] else "No"
+
+            # Start building the message shown in the popup window.
+            msg = "Genetic Parts Availability Check\n\n"
+            msg += f"Registries queried: {', '.join(report['providers'])}\n"
+            msg += f"Total unique parts: {summary['total_parts']}\n"
+            msg += f"Available parts: {summary['available_parts']}\n"
+            msg += f"Missing parts: {summary['missing_parts']}\n"
+            msg += f"Buildable circuits: {summary['buildable_circuits']}/{summary['total_circuits']}\n"
+            msg += f"Requested functionality buildable: {buildable_text}\n\n"
+
+            # Find every part that the database layer marked unavailable.
+            missing_parts = [entry for entry in report["parts"] if not entry["availability"]["available"]]
+            if missing_parts:
+                msg += "Missing or unmapped parts:\n"
+                for entry in missing_parts:
+                    # availability contains the reason, such as "No registry
+                    # mapping" or "Not found in configured registries".
+                    availability = entry["availability"]
+                    reason = availability.get("reason") or "Unavailable"
+                    msg += f"  • {entry['part']} ({entry['part_type']}): {reason}\n"
+                msg += "\n"
+
+            # Find circuits that cannot be built because one or more of their
+            # required parts were unavailable.
+            unbuildable_circuits = [entry for entry in report["circuits"] if not entry["buildable"]]
+            if unbuildable_circuits:
+                msg += "Circuits blocked by unavailable parts:\n"
+                for circuit in unbuildable_circuits:
+                    # Show only the missing part names to keep the popup readable.
+                    missing_names = ", ".join(part["part"] for part in circuit["missing_parts"])
+                    msg += f"  • Circuit {circuit['circuit_index']}: {missing_names}\n"
+                msg += "\n"
+
+            # The detailed JSON file is saved by gentech_database.py. The GUI
+            # tells the user where that file was written.
+            msg += f"Saved report: {report['report_file']}"
+
+            # Display the final summary popup.
+            QMessageBox.information(self, "Database Check", msg)
+
+            # Also update the status bar with the shortest useful result.
+            self.statusBar().showMessage(
+                f"Database check complete: {summary['buildable_circuits']}/{summary['total_circuits']} circuits buildable"
+            )
+            
+        except Exception as e:
+            # Any parsing, file, or lookup error is shown to the user instead of
+            # crashing the application.
+            QMessageBox.critical(self, "Error", f"Database check failed:\n{str(e)}")
+
     #This function is to open the drawing canvas
     def DrawWindow(self):
+        if CircuitBuilder is None:
+            QMessageBox.warning(self, "Unavailable", "Circuit Builder dependencies are not installed in this environment.")
+            return
         self.circuit_builder = CircuitBuilder(self)
         self.circuit_builder.show()
         self.hide()
@@ -90,128 +615,161 @@ class MainPage(QtWidgets.QMainWindow):
             option = 0
         elif self.GatesRadioButton.isChecked():
             option = 1
-        a=0
         self.InsertExpressionEdit.setText(bexp)
-        self.ProgressBar.setVisible(True)
-        self.ProgressBar.setValue(0)
+        #self.ProgressBar.setVisible(True)
+        #self.ProgressBar.setValue(0)
         self.result.append("a")
 
-        process(bexp)
-        DisplayData()
-        DisplayCircuits()
-        self.ProgressBar.setValue(25)
-        sleep(1)
-        number = random.randint(30,70)
-        self.ProgressBar.setValue(number)
-        sbol.SBOL_File(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value()) #create SBOl files
-        number = random.randint(75,90)
-        self.ProgressBar.setValue(number)
-        sleep(0.1)
-        logic.Logical_Representation(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value()) #Create Logical Representation images
-        visual.SBOLv(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value())   #create SBOL visual Representation images
-        self.ProgressBar.setValue(100)
+        if not self._run_expression_pipeline(bexp, option, include_sbol=True, update_progress=True):
+            self.result.clear()
+            return
 
-        bexp = Convert(bexp)
-        bexp = "".join(bexp.split())
-        #bexp = bexp.strip() #Remove spaces in the expression
-        finalexp=[]
-        exp = bexp.split("+") #change the notations
-        for i in range(len(exp)):
-            term = exp[i].split(".")
-            finalterm=[]
-            for j in range(len(term)):
-                if term[j][-1]=="'":
-                    finalterm.append("not(" + term[j][:-1] + ")")
-                else:
-                    finalterm.append(term[j])
-            finalexp.append("("+" and ".join(finalterm)+")")
-        bexp = " or ".join(finalexp)
-        code = compile(bexp, '', 'eval') #evaluation of expression
-        TruthTable_Input = code.co_names # Generates the number of inputs in an expression. In a.b there are 2 inputs 'a' and 'b'
-        for values1 in product(range(2), repeat=len(TruthTable_Input)): # generate the values of entrid
-            header_count=2**(len(values1))
-            List_TruthTable_Input = [[] for i in range(1, header_count+1)]
-        self.TruthList.clear()
-        for BexpIndex in range(len(TruthTable_Input)): #make the list for TruthTable_Input to show on main window
-            self.ttList.append(TruthTable_Input[BexpIndex])
-            self.ttList.append("   ")
-        self.ttList.append(":   ")
-        self.ttList.append(bexp)
-        s = [str(i) for i in self.ttList]
-        res = " ".join(s)
-        self.TruthList.addItem(res)
-        self.ttList.clear()
-        for values in product(range(2), repeat=len(TruthTable_Input)):# put inputs of espression together
-            for w in range(len(values)):
-                List_TruthTable_Input[a].append(str(values[w]))
-            a+=1
-            env = dict(zip(TruthTable_Input, values)) #put the TruthTable_Input and values togather
-            pk = int(eval(code, env)) #generate the output of truthtable
+        if not self._populate_truth_table(bexp):
+            self.result.clear()
+            return
 
-            for v in values: #append the list to show on main window
-               self.ttList.append(v)
-               self.ttList.append("     ")
-            self.ttList.append(":       ")
-            self.ttList.append(pk)
-            s = [str(i) for i in self.ttList]
-            res = " ".join(s)
-            self.TruthList.addItem(res)
-            self.ttList.clear()
         if len(self.result) > 0: #Call these functions only if there is an expression
             self.CreateCircuitList()
             self.CreateXMLList()
+            self._load_first_sbol_file()
             self.result.clear()
 
-    # This funtion reads the txt which of circuits and returns a list
+    # This function reads the txt which of circuits and returns a list
     #with the number of generated circuits by the inserted boolean expression
+    '''
     def ReadCircuitsFile(self):
-        f = open("circuits.txt")
         circuits = []
-        for i in f:
-            if "*" in i:
-                cnt = []
-                circuits.append(cnt)
-            else:
-                cnt.append(i.replace('\n',''))
-        for i in circuits:
-            for j in i:
-                if j == '':
-                    i.remove(j)
+        try:
+            with open("circuits.txt", "r") as f:
+                lines = f.readlines()
+            
+            current_circuit = []
+            for line in lines:
+                if "*******************" in line:
+                    if current_circuit:
+                        circuits.append(current_circuit)
+                        current_circuit = []
+                else:
+                    if line.strip():
+                        current_circuit.append(line.strip())
+            
+            # Add the last circuit
+            if current_circuit:
+                circuits.append(current_circuit)
+                
+        except FileNotFoundError:
+            print("circuits.txt not found")
+            
         return circuits
+    '''
 
+    def ReadCircuitsFile(self):
+        """Read circuits from circuits.txt"""
+        circuits = []
+        try:
+            with open(CIRCUITS_FILE, 'r') as f:
+                content = f.read()
+            
+            # Split by circuit headers
+            blocks = content.split('*******************')
+            
+            for block in blocks:
+                if not block.strip():
+                    continue
+                
+                # Extract lines that are part of the circuit
+                lines = []
+                for line in block.strip().split('\n'):
+                    line = line.strip()
+                    # Skip header lines and empty lines
+                    if line and not line.startswith('*') and 'Genetic Circuit' not in line:
+                        lines.append(line)
+                
+                if lines:
+                    circuits.append(lines)
+            
+            print(f"Read {len(circuits)} circuits from file")
+            
+        except FileNotFoundError:
+            print("circuits.txt not found")
+        except Exception as e:
+            print(f"Error reading circuits: {e}")
+        
+        return circuits
 
     def viewCircuit(self):
         if self.CircuitList.currentItem():
-            img = Image.open('user_files/'+str(self.CircuitList.currentItem().text())+".png")
-            #print('user_files/'+str(self.CircuitList.currentItem().text())+".png")
-            img.show()
-
+            item_text = self.CircuitList.currentItem().text()
+            
+            # Extract circuit number
+            import re
+            numbers = re.findall(r'\d+', item_text)
+            if numbers:
+                circuit_num = numbers[0]
+                
+                # Determine which image to show
+                if "SBOL Visual" in item_text:
+                    img_path = USER_FILES_DIR / f'Circuit {circuit_num} SBOL Visual.png'
+                elif "Logic" in item_text:
+                    img_path = USER_FILES_DIR / f'Circuit {circuit_num} Logic.png'
+                else:
+                    img_path = USER_FILES_DIR / f'Circuit {circuit_num}.png'
+                
+                if os.path.exists(img_path):
+                    img = Image.open(img_path)
+                    img.show()
+                else:
+                    QMessageBox.warning(self, "Not Found", f"Image not found: {str(img_path)}")
+            else:
+                # Fallback to old method
+                img_path = USER_FILES_DIR / f'{item_text}.png'
+                if os.path.exists(img_path):
+                    img = Image.open(img_path)
+                    img.show()
+                else:
+                    QMessageBox.warning(self, "Not Found", f"Image not found: {item_text}")
 
     def SaveLabel(self):
         item = self.CircuitList.currentItem()
         self.saveImageDialog()
 
-
-
-    # When the ciruits are developed using the boolean expression
-    #This function creates the list of the circuts by reading the
-    # txt file of the circuits. It first reads the the number of
-    #circuits int the txt and then creates that much entries in the
-    #Circuit list available on the main window
+    # When the circuits are developed using the boolean expression
+    #This function creates the list of the circuits by reading the
+    # txt file of the circuits.
+    '''
     def CreateCircuitList(self):
         circuits = self.ReadCircuitsFile()
-        if len(self.checkList) > 0:
-            self.CircuitList.clear()
-            self.checkList.clear()
-            for CircuitIndex in range(CountFiles()):
-                self.CircuitList.addItem("Circuit "+str(CircuitIndex+1)+" Logic")
-                self.CircuitList.addItem("Circuit "+str(CircuitIndex+1)+" SBOL Visual")
-                self.checkList.append("Check")
-        else:
-            for CircuitIndex in range(CountFiles()):
-                self.CircuitList.addItem("Circuit "+str(CircuitIndex+1)+" Logic")
-                self.CircuitList.addItem("Circuit "+str(CircuitIndex+1)+" SBOL Visual")
-                self.checkList.append("Check")
+        
+        self.CircuitList.clear()
+        self.checkList.clear()
+        
+        for i in range(len(circuits)):
+            circuit_num = i + 1
+            self.CircuitList.addItem(f"Circuit {circuit_num} Logic")
+            self.CircuitList.addItem(f"Circuit {circuit_num} SBOL Visual")
+            self.checkList.append("Check")
+    '''
+
+    def CreateCircuitList(self):
+        """Create the circuit list display from actual circuits"""
+        circuits = self.ReadCircuitsFile()
+        
+        self.CircuitList.clear()
+        self.checkList.clear()
+        
+        if not circuits:
+            print("No circuits found")
+            self.statusBar().showMessage('No circuits found')
+            return
+        
+        for i in range(len(circuits)):
+            circuit_num = i + 1
+            self.CircuitList.addItem(f"Circuit {circuit_num} Logic")
+            self.CircuitList.addItem(f"Circuit {circuit_num} SBOL Visual")
+            self.checkList.append("Check")
+        
+        print(f"Added {len(circuits)} circuits to display")
+        self.statusBar().showMessage(f'Found {len(circuits)} circuits')
 
     #Code for importing a file in Notes
     def FileOpenDialog(self):
@@ -225,36 +783,32 @@ class MainPage(QtWidgets.QMainWindow):
                 self.Notes.setText(data)
 
 
-    # When the ciruits are developed using the boolean expression
+    # When the circuits are developed using the boolean expression
     #This function creates the list of XML files of the
-    #generated circuts by reading the
-    # txt file of the circuits. It first reads the the number of
-    #circuits int the txt and then creates that much entries in the
-    #SBOL file list available on the main window. User can click on the
-    #file and save it for later use
+    #generated circuits by reading the
+    # txt file of the circuits.
     def CreateXMLList(self):
-        circuits = self.ReadCircuitsFile()
-        if len(self.checkxmlList) > 0:
-            self.xmlList.clear()
-            self.checkxmlList.clear()
-            for CircuitIndex in range(CountFiles()):
-                self.xmlList.addItem("SBOL File "+str(CircuitIndex+1))
-                self.checkxmlList.append("Check")
+        self.xmlList.clear()
+        self.checkxmlList.clear()
+        xml_files = sorted(
+            USER_FILES_DIR.glob("SBOL File *.xml"),
+            key=lambda path: int(re.search(r"(\d+)", path.stem).group(1)) if re.search(r"(\d+)", path.stem) else 0
+        )
+        for path in xml_files:
+            self.xmlList.addItem(path.stem)
+            self.checkxmlList.append("Check")
+
+        if not xml_files:
+            self.Notes.setText(
+                "No SBOL files were generated for this expression.\n\n"
+                "If circuit generation failed, this expression is not supported by the current gate library.\n"
+                "Try another expression to populate the SBOL Data view."
+            )
+            self.statusBar().showMessage('No SBOL files generated')
         else:
-            for CircuitIndex in range(CountFiles()):
-                self.xmlList.addItem("SBOL File "+str(CircuitIndex+1))
-                self.checkxmlList.append("Check")
+            self.statusBar().showMessage(f'Loaded {len(xml_files)} SBOL files')
 
-
-
-
-    #This funtoin is created to save the xml file for the generated circuits.
-    #Upon clicking this function open a saving browser and ask user to enter a
-    #UserfileName (the name with the user wants to save the file). It checks if
-    #a file with same name already exists. If yes, then it asks for replacement.
-    #If not, then it create a file with the given name. Hereafter, it opens a file
-    #with the same name as the name clicked on the list. It reads it and copies
-    #whole data to the newly created file.
+    #This function is created to save the xml file for the generated circuits.
     def FileSaveDialog(self):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
@@ -266,19 +820,34 @@ class MainPage(QtWidgets.QMainWindow):
             else:
                 f= open(UserfileName,"w+")
                 item = self.xmlList.currentItem()
-                fo = open(str(item.text())+".xml")
+                if item is None:
+                    QMessageBox.warning(self, "Warning", "No SBOL file selected")
+                    f.close()
+                    return
+                source_path = self._resolve_sbol_file_path(str(item.text()))
+                if not os.path.exists(source_path):
+                    QMessageBox.warning(self, "Not Found", f"SBOL file not found: {source_path}")
+                    f.close()
+                    return
+                fo = open(source_path)
                 for i in fo:
                     f.write(i)
 
-
-
     def ReadXMLFile(self):
         item = self.xmlList.currentItem()
+        if item is None:
+            QMessageBox.warning(self, "Warning", "No SBOL file selected")
+            return
         file = item.text()
-        f = open(str(file)+".xml","r")
-        data = f.read()
+        file_path = self._resolve_sbol_file_path(str(file))
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "Not Found", f"SBOL file not found: {file_path}")
+            self.statusBar().showMessage('SBOL file not found')
+            return
+        with open(file_path, "r") as f:
+            data = f.read()
         self.Notes.setText(data)
-
+        self.statusBar().showMessage(f'Loaded {os.path.basename(file_path)}')
 
     #THis functions save the text from the Notes Tab on Main window
     def SaveNotes(self):
@@ -290,15 +859,7 @@ class MainPage(QtWidgets.QMainWindow):
             f= open(InputFile+".xml","w+")
             f.write(Text)
 
-
-
-    #This funtoin is created to save an image file for the generated circuits.
-    #Upon clicking this function open a saving browser ans ask user to enter a
-    #UserfileName (the name with the user wants to save the file). It checks if
-    #a file with same name already exists. If yes, then it asks for replacement.
-    #If not, then it create a file with the given name. Hereafter, it opens a file
-    #with the same name as the name clicked on the list. It reads it and saves that
-    #image as a newly created file.
+    #This function is created to save an image file for the generated circuits.
     def saveImageDialog(self):
         options = QFileDialog.Options()
         options |= QFileDialog.DontUseNativeDialog
@@ -308,61 +869,66 @@ class MainPage(QtWidgets.QMainWindow):
             if (":" in fileName) or ("?" in fileName) or ("/" in fileName) or ("*" in fileName) or ("<" in fileName) or (">" in fileName) or ("|" in fileName) or ('"' in fileName):
                 QMessageBox.about(self, "Alert", "A file name can't contain any of the following \n \ / : * ? < > |")
             else:
-                item = self.CircuitList.currentItem() #the selected item
-                saveimg  = Image.open('user_files/'+str(item.text())+".png") #use this image to save
-                saveimg.save(str(UserfileName)+".png") #save image as
-
-#or "?" in UserfileName or "/" in UserfileName or "*" in UserfileName or "<" in UserfileName or ">" in UserfileName or "|" in UserfileName or '"' in UserfileName:
-
-
+                item = self.CircuitList.currentItem()
+                # Extract circuit number
+                import re
+                numbers = re.findall(r'\d+', item.text())
+                if numbers:
+                    circuit_num = numbers[0]
+                    if "SBOL Visual" in item.text():
+                        img_path = USER_FILES_DIR / f'Circuit {circuit_num} SBOL Visual.png'
+                    elif "Logic" in item.text():
+                        img_path = USER_FILES_DIR / f'Circuit {circuit_num} Logic.png'
+                    else:
+                        img_path = USER_FILES_DIR / f'Circuit {circuit_num}.png'
+                    
+                    if os.path.exists(img_path):
+                        saveimg = Image.open(img_path)
+                        saveimg.save(str(UserfileName)+".png")
+                    else:
+                        QMessageBox.warning(self, "Not Found", "Image file not found")
+                else:
+                    saveimg = Image.open(USER_FILES_DIR / (str(item.text()) + ".png"))
+                    saveimg.save(str(UserfileName)+".png")
 
     #This function, upon clicking the reset button on main window,
-    #clears all the generated/entered values on the main wondow
+    #clears all the generated/entered values on the main window
     def ResetAll(self):
         mBox = QMessageBox.question(self, "Warning!!", "Are you sure you want to clear?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if mBox == QMessageBox.Yes:
-            #sys.exit()
             self.InsertExpressionEdit.clear()
             self.spinBox.setValue(10)
             self.doubleSpinBox.setValue(100)
-            self.CircuitSpinBox.value(10)
+            self.CircuitSpinBox.setValue(10)
             self.xmlList.clear()
             self.CircuitList.clear()
             self.TruthList.clear()
-            self.ProgressBar.setValue(0)
+            #self.ProgressBar.setValue(0)
             self.Notes.clear()
-
 
     def ResetBeforeNew(self):
         self.xmlList.clear()
         self.CircuitList.clear()
         self.TruthList.clear()
-        self.ProgressBar.setValue(0)
+        #self.ProgressBar.setValue(0)
         self.Notes.clear()
 
-
-    #This function is dedicated to the close the main wondow
-    # upon cliking the Close button it gives the warnign and
-    #upon approval it closes the system. By default, No is
-    #selected in case the user mistakenly clicks the close butotn
-    #and presses the enter button.
+    #This function is dedicated to close the main window
     def CloseApp(self):
         mBox = QMessageBox.question(self, "Warning!!", "Are you sure you want exit?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if mBox == QMessageBox.Yes:
             sys.exit()
 
     def About(self):
-        os.startfile('AboutGenetech.txt')
+        about_path = BASE_DIR / 'AboutGenetech.txt'
+        if sys.platform.startswith("darwin"):
+            os.system(f'open "{about_path}"')
+        elif os.name == "nt":
+            os.startfile(str(about_path))
+        else:
+            os.system(f'xdg-open "{about_path}"')
 
     #This is the most important function of this code.
-    #First of all it takes the boolean, using that it generates
-    #the circuits using the function g.Gateway(bexp). It also
-    #replaces the notations in inserted expression. For example,
-    #'and' operation in pyton is either expresssed as "and" or "&",
-    #but user inserts it as a dot(.) which is the  how generally
-    #'and' is written in an expression. Therfore all the notations are
-    #changed accordingly. Then this function uses the expression to
-    #generate the truth table
     ttList=[]
     List_TruthTable_Input =[]
     def EnterExp(self):
@@ -370,94 +936,47 @@ class MainPage(QtWidgets.QMainWindow):
             option = 0
         elif self.GatesRadioButton.isChecked():
             option = 1
-        a=0
         bexp = self.InsertExpressionEdit.text() #User expression
+        
+        # ===== ADD CLEANING RIGHT HERE =====
+        # Replace all fancy quotes with straight quotes
+        bexp = bexp.replace('’', "'")
+        bexp = bexp.replace('‘', "'")
+        bexp = bexp.replace('”', '"')
+        bexp = bexp.replace('“', '"')
+        bexp = bexp.replace('"', '')
+        bexp = bexp.replace('`', "'")
+        bexp = bexp.replace('′', "'")
+        bexp = bexp.replace(' ', '')
+        # ================================
+            
         if bexp == "":
-            mBox1 = QMessageBox.about(self, "Alert", "Please insert the expression") # warning in case of empty expression
+            mBox1 = QMessageBox.about(self, "Alert", "Please insert the expression")
         elif not bexp:
             bexp = 'a'
         else:
             bexp = bexp.replace(" ", "")
-            self.ProgressBar.setVisible(True)
-            #self.Progress()
-            self.ProgressBar.setValue(0)
+            #self.ProgressBar.setVisible(True)
+            #self.ProgressBar.setValue(0)
             self.result.append("a")
 
-            #g.Gateway(bexp)
-            process(bexp)
-            DisplayData()
-            DisplayCircuits()
-            self.ProgressBar.setValue(25)
-            sleep(1)
-            number = random.randint(30,70)
-            self.ProgressBar.setValue(number)
-            #print("{0}, {1}, {2}, {3}".format(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value()))
-            sbol.SBOL_File(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value()) #create SBOl files
-            number = random.randint(75,90)
-            self.ProgressBar.setValue(number)
-            sleep(0.1)
-            logic.Logical_Representation(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value()) #Create Logical Representation images
-            visual.SBOLv(self.spinBox.value(), self.doubleSpinBox.value(), option, self.CircuitSpinBox.value())   #create SBOL visual Representation images
-            self.ProgressBar.setValue(100)
+            if not self._run_expression_pipeline(bexp, option, include_sbol=True):
+                self.result.clear()
+                return
 
-            bexp = Convert(bexp)
-            bexp = "".join(bexp.split())
-            #bexp = bexp.strip() #Remove spaces in the expression
-            finalexp=[]
-            exp = bexp.split("+") #change the notations
-            for i in range(len(exp)):
-                term = exp[i].split(".")
-                finalterm=[]
-                for j in range(len(term)):
-                    if term[j][-1]=="'":
-                        finalterm.append("not(" + term[j][:-1] + ")")
-                    else:
-                        finalterm.append(term[j])
-                finalexp.append("("+" and ".join(finalterm)+")")
-            bexp = " or ".join(finalexp)
-            code = compile(bexp, '', 'eval') #evaluation of expression
-            TruthTable_Input = code.co_names # Generates the number of inputs in an expression. In a.b there are 2 inputs 'a' and 'b'
-            for values1 in product(range(2), repeat=len(TruthTable_Input)): # generate the values of entrid
-                header_count=2**(len(values1))
-                List_TruthTable_Input = [[] for i in range(1, header_count+1)]
-            self.TruthList.clear()
-            for BexpIndex in range(len(TruthTable_Input)): #make the list for TruthTable_Input to show on main window
-                self.ttList.append(TruthTable_Input[BexpIndex])
-                self.ttList.append("   ")
-            self.ttList.append(":   ")
-            self.ttList.append(bexp)
-            s = [str(i) for i in self.ttList]
-            res = " ".join(s)
-            self.TruthList.addItem(res)
-            self.ttList.clear()
-            for values in product(range(2), repeat=len(TruthTable_Input)):# put inputs of espression together
-                for w in range(len(values)):
-                    List_TruthTable_Input[a].append(str(values[w]))
-                a+=1
-                env = dict(zip(TruthTable_Input, values)) #put the TruthTable_Input and values togather
-                pk = int(eval(code, env)) #generate the output of truthtable
-
-                for v in values: #append the list to show on main window
-                   self.ttList.append(v)
-                   self.ttList.append("     ")
-                self.ttList.append(":       ")
-                self.ttList.append(pk)
-                s = [str(i) for i in self.ttList]
-                res = " ".join(s)
-                self.TruthList.addItem(res)
-                self.ttList.clear()
-        if len(self.result) > 0: #Call these functions only if there is an expression
+            if not self._populate_truth_table(bexp):
+                self.result.clear()
+                return
+        if len(self.result) > 0:
             self.CreateCircuitList()
             self.CreateXMLList()
+            self._load_first_sbol_file()
             self.result.clear()
 
-
-
-
 if __name__ == "__main__":
-    app = QCoreApplication.instance()               # Fixes error with kernel crashing on second run of application
-    if app is None:                                 # PyQt doesn't like multiple QApplications in the same process, therefore
-        app = QtWidgets.QApplication(sys.argv)                # apart from the initial run, the first QApplication instance will run
+    app = QCoreApplication.instance()
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
     widget = MainPage()
     widget.show()
     sys.exit(app.exec_())

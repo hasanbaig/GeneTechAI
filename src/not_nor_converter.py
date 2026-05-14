@@ -146,6 +146,7 @@ class NotNorConverter:
 		exp_inside_braces = exp_inside_braces.replace("[", "", 1)
 		exp_inside_braces = exp_inside_braces.replace("]'", "", 1)
 		array_literals_minterms = self.__nor_not_processor.extract_literals_min_terms([], exp_inside_braces)
+		interim_string = ""
 		#print("NAND : ", array_literals_minterms, exp_inside_braces)
 		for i in range(len(array_literals_minterms)):
 			if "'" in array_literals_minterms[i]:
@@ -156,7 +157,7 @@ class NotNorConverter:
 				interim_string = new_element
 			else:
 				interim_string = interim_string + "+" + new_element
-		return interim_string
+		return interim_string if interim_string else exp_inside_braces
 
 	#Count number of SOP tags
 	def count_brace_indices(self, exp_with_braces): 
@@ -212,6 +213,8 @@ class NotNorConverter:
 					interim_string = interim_string + new_element
 			interim_string = interim_string.replace("[", "(")
 			interim_string = interim_string.replace("]", ")")
+			if "(" not in interim_string or ")" not in interim_string:
+				return "[" + interim_string + "]'"
 			#print("interim string " + interim_string)
 			# search for ( and bring the multiplier before (, instead of after ).
 			#Extracting multiplier first. searching and replacing brace terms () with "".

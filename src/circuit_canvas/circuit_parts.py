@@ -1,7 +1,7 @@
-from part_graphics import GraphicsPart
-from part_widget import PartWidget
-from part_connector import *
-from configuration import *
+from .part_graphics import GraphicsPart
+from .part_widget import PartWidget
+from .part_connector import *
+from .configuration import *
 
 class CircuitPart():
     def __init__(self, scene, part_type = "OR Gate",  inputs=[], outputs=[]):

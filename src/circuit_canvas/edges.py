@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
-from part_connector import *
+from .part_connector import *
 
 class MyGraphicsEdge(QGraphicsPathItem):
     def __init__(self, edge, parent=None):

@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.DS_Store
 
 # C extensions
 *.so
@@ -89,6 +90,11 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Local/generated app outputs
+src/*Debug.csv
+src/user_files/
+src/database_reports/
 
 # Spyder project settings
 .spyderproject

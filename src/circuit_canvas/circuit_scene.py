@@ -1,4 +1,4 @@
-from window_graphics_scene import MyGraphicsScene
+from .window_graphics_scene import MyGraphicsScene
 
 class CircuitScene:
     def __init__(self):

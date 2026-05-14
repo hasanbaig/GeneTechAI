@@ -1,33 +1,73 @@
 ![GeneTech Logo](https://github.com/hasanbaig/GeneTech/blob/master/GT-Logo.png)
 
-### About GeneTech
-GeneTech (extracted from **Gene**tic **Tech**nology mapping) is a tool which allows a user to generate genetic logic circuits only by specifying the logical function desired to be achieved in a living cell. It does not require a user (either biologist or a computer scientist) to learn any programming language. All what it requires a user to specify a desired logical function in the form of simple Boolean Algebra. 
+# GeneTechAI
 
-The tool first performs logic optimization, followed by synthesis and technology mapping using a library of genetic logic gates. In the end, GeneTech performs technology mapping to generate all the feasible circuits, with different genetic gates, to achieve the desired logical behavior.  
+GeneTechAI extends GeneTech, a genetic technology mapping tool, with an AI-assisted workflow for designing genetic logic circuits. A user can describe a desired behavior for a living cell using Boolean algebra, and the project can optimize, synthesize, and map that expression into feasible genetic circuits using a genetic gate library.
 
-GeneTech generates the circuits in the form of [SBOL data](https://sbolstandard.org/data/), [SBOL visual](https://sbolstandard.org/visual/) and Logic circuit schematic. 
+GeneTechAI keeps the original GeneTech circuit generation pipeline and adds newer interfaces for AI and web-based use. The Groq-powered natural language parser can convert plain-language circuit descriptions into Boolean expressions using supported inputs such as IPTG, aTc, and Arabinose. The generated designs can be exported as SBOL data, SBOL visual diagrams, and logic circuit schematics.
 
+## What GeneTechAI Does
 
-### Platform
-GeneTech is written in python 3.
+- Converts Boolean expressions into genetic logic circuit designs.
+- Performs logic optimization, synthesis, and technology mapping.
+- Generates feasible circuit alternatives using available genetic gates.
+- Produces SBOL files, SBOL visual output, and logic schematics.
+- Includes AI-assisted natural language parsing through Groq.
+- Includes both the original PyQt desktop interface and a Flask web interface.
 
-Clone the up-to-date built from https://github.com/hasanbaig/GeneTech.git.
+## Platform
 
-### Dependencies
-You need to install the libraries in [requirements.txt](https://github.com/hasanbaig/GeneTech/blob/master/src/requirements.txt) to successfully run GeneTech. You can do it using the following command
+GeneTechAI is written in Python 3.
 
-``` pip3 install -r src/requirements.txt ```
+The original GeneTech project is available at:
 
-Once installed, run the Genetech.py as follows:
+```text
+https://github.com/hasanbaig/GeneTech.git
+```
 
+This GeneTechAI repository is intended for the AI-enhanced version:
 
-``` python src/Genetech.py ```
+```text
+https://github.com/hasanbaig/GeneTechAI.git
+```
 
+## Installation
 
-### Current Contributors
-1. Hasan Baig
+Clone the repository:
 
-### Past Contributors
+```bash
+git clone https://github.com/hasanbaig/GeneTechAI.git
+cd GeneTechAI
+```
+
+Install the main dependencies:
+
+```bash
+pip3 install -r src/requirements.txt
+```
+
+For the Flask deployment/runtime dependencies, install:
+
+```bash
+pip3 install -r src/requirements-render.txt
+```
+
+## Running the Desktop App
+
+Run the original GeneTech desktop interface:
+
+```bash
+python src/Genetech.py
+```
+
+If you run into NumPy compatibility issues, use the compatibility launcher:
+
+```bash
+python src/run_genetech.py
+```
+
+GeneTechAI builds on the GeneTech project and its contributors:
+
 1. Hasan Baig
 2. Jan Madsen
 3. Mudasir Hanif

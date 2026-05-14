@@ -36,7 +36,7 @@ class ReduceExpression:
 				"Expression to Process", "selected_rand_comb", "Rand El 1", "Rand El 2", "Matched Variable", 
 				"Loop Reduced Expression", "law_replace", "New Expression", "New Cost\r"]
 		self.file_data = pd.DataFrame(columns=columns)	
-		self.file = self.file_data.to_csv('..\Debug.csv')
+		self.file = None
 		#print("I am in REDUCE Constructor Class")
 	
 	# Main method to run the REDUCE procedure.
@@ -167,7 +167,7 @@ class ReduceExpression:
 		#print(len(self.file_data.columns), len(data))
 		assert len(self.file_data.columns) == len(data)
 		self.file_data.loc[len(self.file_data)] = list(data)
-		self.file = self.file_data.to_csv("..\Debug.csv")
+		self.file = None
 		
 	def __construct_new_expression(self, next_min_terms,  new_expression):
 		new_expression += '+'.join(next_min_terms)

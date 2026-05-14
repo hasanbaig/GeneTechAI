@@ -110,10 +110,11 @@ class SBOLv:
 							else:
 								if len(gate) == 2: #YFP CDS
 									promotor = {'type':'Promoter', 'name':gate[0], 'opts':{'color':col_map[color], 'label':gate[0], 'label_x_offset':-5, 'label_y_offset':-4, 'label_size':5}}
-									rep = {'type':'Repression', 'from_part':coding_seq[0], 'to_part':promotor, 'opts':{'color':col_map[color], 'arc_height':20}}
 									design.append(promotor)
-									reg.append(rep)
-									coding_seq.pop(0)
+									if coding_seq:
+										rep = {'type':'Repression', 'from_part':coding_seq[0], 'to_part':promotor, 'opts':{'color':col_map[color], 'arc_height':20}}
+										reg.append(rep)
+										coding_seq.pop(0)
 									color += 1
 									u = {'type': 'RBS', 'name': 'u'+str(color),  'opts':{'color': (0,0,0), 'start_pad': -6, 'x_extent': 6}}
 									design.append(u)
@@ -125,10 +126,11 @@ class SBOLv:
 
 								elif len(gate) == 3: #OR Gate for YFP
 									promotor1 = {'type':'Promoter1', 'name':gate[0], 'opts':{'color':col_map[color], 'label':gate[0], 'label_x_offset':-6, 'label_y_offset':-4, 'label_size':5}}
-									rep = {'type':'Repression', 'from_part':coding_seq[0], 'to_part':promotor1, 'opts':{'color':col_map[color], 'arc_height':20}}
 									design.append(promotor1)
-									reg.append(rep)
-									coding_seq.pop(0)
+									if coding_seq:
+										rep = {'type':'Repression', 'from_part':coding_seq[0], 'to_part':promotor1, 'opts':{'color':col_map[color], 'arc_height':20}}
+										reg.append(rep)
+										coding_seq.pop(0)
 									color += 1
 									if gate[1] in baseList():
 										promotor2 = {'type':'Promoter2', 'name':gate[1], 'opts':{'color':(0,0,0), 'label':gate[1], 'label_x_offset':-1, 'label_y_offset':-4, 'label_size':5}}
@@ -151,6 +153,8 @@ class SBOLv:
 						for k in range(len(All_gates)):
 							gate = All_gates[k].split('-> ')
 							if len(gate)==2:
+								if not use:
+									continue
 								terminator = {'type':'Terminator', 'name':'t'+str(color+2), 'opts':{'color':(0,0,0), 'start_pad':-1}}
 								cds_color = use[-1][1]
 								cds = {'type':'CDS', 'name':gate[1], 'opts':{'color':col_map[cds_color], 'edge_color':col_map[cds_color], 'x_extent':24, 'label':gate[1], 'label_color':(1,1,1), 'label_style':'italic', 'label_x_offset':-1, 'label_size':6}}
@@ -191,10 +195,8 @@ class SBOLv:
 				ax_dna.set_yticks([])
 				ax_dna.axis('off')
 
-				fig.savefig('user_files/Circuit '+str(file_num)+' SBOL Visual.png', dpi=700)
+				fig.savefig(str(USER_FILES_DIR / ('Circuit '+str(file_num)+' SBOL Visual.png')), dpi=700)
 				plt.close('all')
 
 if __name__ == '__main__':
     visual = SBOLv(1000, 1000)
-
-

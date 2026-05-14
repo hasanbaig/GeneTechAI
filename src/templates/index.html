@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>GeneTechAI</title>
+  <link rel="stylesheet" href="/static/static.css">
+</head>
+<body>
+  <div class="app-window">
+
+    <header class="top-header">
+      <div class="logo-row">
+        <img src="/static/BigLogo.png" class="logo" alt="GeneTechAI Logo">
+        <div class="tagline">
+          - A <span class="blue">Technology</span> mapping tool for
+          <span class="orange">Genetic</span> logic circuits
+        </div>
+      </div>
+      <div class="dna-line"></div>
+    </header>
+
+    <form method="POST" action="/draw" class="main-form">
+
+      {% if error %}
+      <div class="error-banner">{{ error }}</div>
+      {% endif %}
+
+      <div class="row">
+        <label>Insert Expression</label>
+        <input
+          type="text"
+          name="expression"
+          value="{{ expression or '' }}"
+          placeholder="IPTG.aTc.Arabinose'+IPTG'.aTc.Arabinose'+IPTG.aTc'..."
+        >
+        <button type="submit" class="small-btn">Draw</button>
+      </div>
+
+      <div class="row">
+        <label>Maximum No. of Gates</label>
+        <input type="number" name="max_gates" value="{{ max_gates or '10' }}">
+      </div>
+
+      <div class="row">
+        <label>Maximim Delay</label>
+        <input type="text" name="max_delay" value="{{ max_delay or '100.00 s' }}">
+      </div>
+
+      <div class="row">
+        <label>No. of Circuits</label>
+        <input type="number" name="num_circuits" value="{{ num_circuits or '10' }}">
+      </div>
+
+      <div class="row order-row">
+        <label>Order By</label>
+
+        <div class="radio-group">
+          <label class="radio-label">
+            <input type="radio" name="order_by" value="delay" {% if order_by != 'gates' %}checked{% endif %}>
+            Delay
+          </label>
+
+          <label class="radio-label">
+            <input type="radio" name="order_by" value="gates" {% if order_by == 'gates' %}checked{% endif %}>
+            No. of gates
+          </label>
+        </div>
+
+        <button type="reset" class="small-btn">Reset</button>
+        <button type="submit" class="small-btn">Enter</button>
+        <button type="submit" formaction="/natural-language" class="small-btn wide">
+          Natural Language
+        </button>
+      </div>
+
+      <section class="output-panel">
+        <div class="tabs">
+          <button type="button" class="tab active">Output(s)</button>
+          <button type="button" class="tab">SBOL Data</button>
+        </div>
+
+        <div class="output-content">
+          <div class="display-block">
+            <h3>Truth Table Display</h3>
+            <textarea readonly>{{ truth_table or '' }}</textarea>
+          </div>
+
+          <div class="display-block">
+            <h3>Circuit(s) Display</h3>
+            <textarea readonly>{{ circuits or '' }}</textarea>
+          </div>
+
+          <div class="side-buttons">
+            <div class="generated-group">
+              <h3>SBOL Data</h3>
+              {% if xml_files %}
+                {% for filename in xml_files %}
+                <a href="/generated/{{ filename }}" target="_blank">{{ filename }}</a>
+                {% endfor %}
+              {% else %}
+                <span>No SBOL files yet</span>
+              {% endif %}
+            </div>
+
+            <div class="generated-group">
+              <h3>Previews</h3>
+              {% for filename in logic_images %}
+              <a href="/generated/{{ filename }}" target="_blank">{{ filename }}</a>
+              {% endfor %}
+              {% for filename in sbol_images %}
+              <a href="/generated/{{ filename }}" target="_blank">{{ filename }}</a>
+              {% endfor %}
+              {% if not logic_images and not sbol_images %}
+              <span>No preview files yet</span>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if logic_images or sbol_images %}
+        <div class="preview-grid">
+          {% for filename in logic_images %}
+          <div class="preview-card">
+            <div class="preview-title">{{ filename }}</div>
+            <a href="/generated/{{ filename }}" target="_blank">
+              <img src="/generated/{{ filename }}" alt="{{ filename }}">
+            </a>
+          </div>
+          {% endfor %}
+          {% for filename in sbol_images %}
+          <div class="preview-card">
+            <div class="preview-title">{{ filename }}</div>
+            <a href="/generated/{{ filename }}" target="_blank">
+              <img src="/generated/{{ filename }}" alt="{{ filename }}">
+            </a>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+      </section>
+
+    </form>
+
+    <footer class="status-bar">
+      {{ status or 'Ready' }}
+    </footer>
+
+  </div>
+</body>
+</html>

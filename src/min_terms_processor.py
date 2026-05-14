@@ -201,6 +201,10 @@ class MinTermsProcessor:
 				split_multiplicand[0] = re.sub("(EOP)([0-9]+)", ")", split_multiplicand[0])
 				##print("\n****split_multiplicand[0] replace EOP: "+split_multiplicand[0])
 				split_multiplicand[0] = split_multiplicand[0].replace(" ", "")
+				if len(split_multiplicand) == 1:
+					current_min_terms[i] = split_multiplicand[0]
+					input_exp = ""
+					continue
 				EOP = "EOP" + matcher.group(2)
 				#print(SOP, EOP)
 				#print("\n\n****split_multiplicand[1] : "+split_multiplicand[1])
@@ -361,6 +365,10 @@ class MinTermsProcessor:
 		return arrays_literals_minterms
 
 	def extract_literals_min_terms(self, arrays_literals_minterms, rest_of_mt):
+		if len(rest_of_mt) == 1 and rest_of_mt != "'":
+			arrays_literals_minterms.append(rest_of_mt)
+			return arrays_literals_minterms
+
 		for i in range(0, len(rest_of_mt) - 1):
 			if rest_of_mt[i+1] == "'":
 				arrays_literals_minterms.append(
@@ -377,10 +385,3 @@ class MinTermsProcessor:
 		if splitter in input:
 			input = input.split(splitter, 1)
 		return input
-
-
-check = MinTermsProcessor()
-print(check.expand_min_terms("c(a+b)'+d(b+c+f)+e(a+d+x+y)"))
-#str1 = "a'bc+bSOP1a'c'+acEOP1"
-#print("total : ", check.count_min_terms_expression(str1))
-

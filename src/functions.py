@@ -3,9 +3,20 @@ from sbol2 import *
 import sbol2
 print(sbol2.__version__)
 import glob, os
+from pathlib import Path
+
+BASE_DIR = Path(__file__).resolve().parent
+USER_FILES_DIR = BASE_DIR / "user_files"
+DATA_FILE = BASE_DIR / "Data.txt"
+CIRCUITS_FILE = BASE_DIR / "circuits.txt"
+GATESLIB_FILE = BASE_DIR / "GatesLib.txt"
+GATESLIB1_FILE = BASE_DIR / "GatesLib1.txt"
+GENETIC_PARTS_FILE = BASE_DIR / "genetic_parts.csv"
+
+USER_FILES_DIR.mkdir(exist_ok=True)
 
 def baseList():
-    f = open("GatesLib.txt")
+    f = open(GATESLIB_FILE)
     lst = []
     for i in f:
         lst.append(i.replace('\n',''))
@@ -23,24 +34,24 @@ def baseList():
 
 def DeleteExistingImages():
     """Delete all the existing Images in the directory"""
-    list_imgs = glob.glob('./user_files/*.png', recursive=True)
+    list_imgs = glob.glob(str(USER_FILES_DIR / "*.png"), recursive=True)
     for i in range(len(list_imgs)):
         os.remove(list_imgs[i])
 
 def DeleteExistingFiles():
     """Delete all the existing SBOL files in the directory"""
-    list = glob.glob('**/*.xml', recursive=True)
+    list = glob.glob(str(USER_FILES_DIR / "*.xml"), recursive=True)
     for i in range(len(list)):
         os.remove(list[i])
 
 def CountFiles():
     """Counts all the existing SBOL files in the directory"""
-    list = glob.glob('**/*.xml', recursive=True)
+    list = glob.glob(str(USER_FILES_DIR / "*.xml"), recursive=True)
     return len(list)
 
 def ReadFile():
     """Read the file and create a list with lines of circuits in it"""
-    f = open("circuits.txt")
+    f = open(CIRCUITS_FILE)
     circuits = []
     for i in f:
         if "*" in i:
@@ -108,7 +119,7 @@ def Check_NOR(promotor1, promotor2, Output_P, Gates):
     return 0
 
 def GatherGates():
-    f = open("GatesLib.txt")
+    f = open(GATESLIB_FILE)
     lst = []
     for i in f:
         lst.append(i.replace('\n',''))
@@ -167,7 +178,7 @@ def Total_time(i):
                     t += float(Delay(gate[0], gate[1]))
                 elif len(gate)==3:
                     if gate[1] not in baseList():           #If the second input is not a base promotor
-                        if gate[1] == 'P'+line_time[0][1]:
+                        if line_time and gate[1] == 'P'+line_time[0][1]:
                             if t < line_time[0][0]:         #If the other input has greater time
                                 t = line_time[0][0]
                                 line_time.pop(0)
@@ -187,7 +198,7 @@ def Total_time(i):
                         time += float(Delay(gate[0], gate[1]))
                     elif len(gate)==3:
                         if gate[1] not in baseList():
-                            if gate[1] == 'P'+line_time[0][1]:
+                            if line_time and gate[1] == 'P'+line_time[0][1]:
                                 if time < line_time[0][0]:          #If the other input has greater time
                                     time = line_time[0][0]
                                     line_time.pop(0)
@@ -198,7 +209,7 @@ def Total_time(i):
                 else:                               #if the gate is the one with flourescent protein as its coding sequence
                     if len(gate)==3:
                         if gate[1] not in baseList():
-                            if gate[1] == 'P'+line_time[0][1]:
+                            if line_time and gate[1] == 'P'+line_time[0][1]:
                                 if time > line_time[0][0]:          #Now we need the smaller time to determine the minimum time taken for a circuit to produce output
                                     time = line_time[0][0]
                                     line_time.pop(0)
@@ -402,21 +413,21 @@ def replace_A(alpha_eq, dict):
 
 def DisplayCircuits():
     """Display circuits"""
-    f = open("circuits.txt")
+    f = open(CIRCUITS_FILE)
     for i in f:
         print(i, end ="")
 
 def DisplayData():
     """Display Data"""
-    f = open("Data.txt")
+    f = open(DATA_FILE)
     l = []
     for i in f:
         l.append(i)
-
-    print("Optimized Expression:", l[0])
-    print("New Cost:", l[1])
-    print("Synthesized Expression into NOT-NOR Form:", l[2])
-    print("New Expression with input proteins:", l[3])
-
-
-
+    if len(l) > 0:
+        print("Optimized Expression:", l[0])
+    if len(l) > 1:
+        print("New Cost:", l[1])
+    if len(l) > 2:
+        print("Synthesized Expression into NOT-NOR Form:", l[2])
+    if len(l) > 3:
+        print("New Expression with input proteins:", l[3])
