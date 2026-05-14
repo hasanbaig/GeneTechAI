@@ -66,6 +66,18 @@ If you run into NumPy compatibility issues, use the compatibility launcher:
 python src/run_genetech.py
 ```
 
+## Download
+
+The latest macOS installer is available from the GitHub Releases page:
+
+```text
+https://github.com/hasanbaig/GeneTechAI/releases
+```
+
+Download `GeneTechAI-macOS.dmg`, open it, and launch `GeneTechAI.app`.
+
+If macOS blocks the app, go to System Settings > Privacy & Security and click Open Anyway.
+
 GeneTechAI builds on the GeneTech project and its contributors:
 
 1. Hasan Baig
