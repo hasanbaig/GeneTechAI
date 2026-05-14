@@ -7,16 +7,20 @@ from pathlib import Path
 
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parents[1] / "Resources"
+    APP_DATA_DIR = Path.home() / "Library" / "Application Support" / "GeneTechAI"
 else:
     BASE_DIR = Path(__file__).resolve().parent
-USER_FILES_DIR = BASE_DIR / "user_files"
-DATA_FILE = BASE_DIR / "Data.txt"
-CIRCUITS_FILE = BASE_DIR / "circuits.txt"
+    APP_DATA_DIR = BASE_DIR
+
+APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+USER_FILES_DIR = APP_DATA_DIR / "user_files"
+DATA_FILE = APP_DATA_DIR / "Data.txt"
+CIRCUITS_FILE = APP_DATA_DIR / "circuits.txt"
 GATESLIB_FILE = BASE_DIR / "GatesLib.txt"
 GATESLIB1_FILE = BASE_DIR / "GatesLib1.txt"
 GENETIC_PARTS_FILE = BASE_DIR / "genetic_parts.csv"
 
-USER_FILES_DIR.mkdir(exist_ok=True)
+USER_FILES_DIR.mkdir(parents=True, exist_ok=True)
 
 def baseList():
     f = open(GATESLIB_FILE)

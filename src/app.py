@@ -14,10 +14,14 @@ from flask import Flask, render_template, request, send_from_directory
 
 if getattr(sys, "frozen", False):
     BASE_DIR = Path(sys.executable).resolve().parents[1] / "Resources"
+    APP_DATA_DIR = Path.home() / "Library" / "Application Support" / "GeneTechAI"
 else:
     BASE_DIR = Path(__file__).resolve().parent
-CIRCUITS_FILE = BASE_DIR / "circuits.txt"
-USER_FILES_DIR = BASE_DIR / "user_files"
+    APP_DATA_DIR = BASE_DIR
+
+APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+CIRCUITS_FILE = APP_DATA_DIR / "circuits.txt"
+USER_FILES_DIR = APP_DATA_DIR / "user_files"
 app = Flask(__name__)
 
 

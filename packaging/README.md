@@ -22,13 +22,12 @@ pyinstaller --clean --noconfirm packaging/GeneTechAI.spec
 The build output will appear in:
 
 ```text
-dist/GeneTechAI/
-dist/GeneTechAI.app
+release/GeneTechAI-macOS.dmg
 ```
 
 ## 3. Create a macOS DMG installer
 
-After the `.app` exists:
+The build script creates the DMG automatically. If you need to create it manually after a PyInstaller build:
 
 ```bash
 hdiutil create -volname "GeneTechAI" \
